@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Search, EyeOff, Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, EyeOff, Eye, Network } from 'lucide-react';
 import type { CaptureAnalysis, Lang, ParsedPacket } from '../types/packet';
 import {
   formatMs,
@@ -24,8 +24,21 @@ export const SequenceDiagramView: React.FC<SequenceDiagramViewProps> = ({
 }) => {
   const [hidePureAck, setHidePureAck] = useState(true);
   const [protocolFilter, setProtocolFilter] = useState<string>('ALL');
+  const [ipMacFilter, setIpMacFilter] = useState<string>('ALL');
   const [searchText, setSearchText] = useState('');
   const [page, setPage] = useState(0);
+
+  const { uniqueIps, uniqueMacs } = useMemo(() => {
+    const ips = new Set<string>();
+    const macs = new Set<string>();
+    for (const p of analysis.packets) {
+      if (p.srcIp && p.srcIp !== 'Unknown') ips.add(p.srcIp);
+      if (p.dstIp && p.dstIp !== 'Unknown') ips.add(p.dstIp);
+      if (p.srcMac) macs.add(p.srcMac);
+      if (p.dstMac) macs.add(p.dstMac);
+    }
+    return { uniqueIps: Array.from(ips), uniqueMacs: Array.from(macs) };
+  }, [analysis.packets]);
 
   const filteredPackets = useMemo(() => {
     const q = searchText.trim().toLowerCase();
@@ -40,16 +53,24 @@ export const SequenceDiagramView: React.FC<SequenceDiagramViewProps> = ({
       if (protocolFilter !== 'ALL' && p.protocol !== protocolFilter) {
         return false;
       }
+      if (ipMacFilter !== 'ALL') {
+        const matches =
+          p.srcIp === ipMacFilter ||
+          p.dstIp === ipMacFilter ||
+          p.srcMac === ipMacFilter ||
+          p.dstMac === ipMacFilter;
+        if (!matches) return false;
+      }
       if (q) {
         const srcHost = getHostDisplayName(p.srcIp, analysis.ipToDomains).primary;
         const dstHost = getHostDisplayName(p.dstIp, analysis.ipToDomains).primary;
         const hay =
-          `${p.id} ${p.srcIp} ${p.dstIp} ${srcHost} ${dstHost} ${p.protocol} ${p.summaryTh} ${p.summaryEn}`.toLowerCase();
+          `${p.id} ${p.srcIp} ${p.dstIp} ${p.srcMac ?? ''} ${p.dstMac ?? ''} ${srcHost} ${dstHost} ${p.protocol} ${p.summaryTh} ${p.summaryEn}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [analysis, hidePureAck, protocolFilter, searchText]);
+  }, [analysis, hidePureAck, protocolFilter, ipMacFilter, searchText]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPackets.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -98,6 +119,43 @@ export const SequenceDiagramView: React.FC<SequenceDiagramViewProps> = ({
               }
               className="pl-9 pr-3 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 w-56"
             />
+          </div>
+
+          <div className="relative flex items-center">
+            <Network className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+            <select
+              value={ipMacFilter}
+              onChange={(e) => {
+                setIpMacFilter(e.target.value);
+                setPage(0);
+              }}
+              className="pl-8 pr-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500 max-w-[220px]"
+            >
+              <option value="ALL">
+                {lang === 'th' ? 'ทุก IP / MAC' : 'All IP / MAC'}
+              </option>
+              {uniqueIps.length > 0 && (
+                <optgroup label="IP Address">
+                  {uniqueIps.map((ip) => {
+                    const d = analysis.ipToDomains[ip]?.[0];
+                    return (
+                      <option key={`ip-${ip}`} value={ip}>
+                        {d ? `${ip} (${d})` : ip}
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              )}
+              {uniqueMacs.length > 0 && (
+                <optgroup label="MAC Address">
+                  {uniqueMacs.map((mac) => (
+                    <option key={`mac-${mac}`} value={mac}>
+                      {mac}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
           </div>
 
           <select

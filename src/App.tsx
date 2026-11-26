@@ -12,7 +12,7 @@ import {
 import { DropZone } from './components/DropZone';
 import { OverviewView } from './components/OverviewView';
 import { PacketInspector } from './components/PacketInspector';
-import { PacketTableView } from './components/PacketTableView';
+import { PacketTableView, type IpMacDirection } from './components/PacketTableView';
 import { SequenceDiagramView } from './components/SequenceDiagramView';
 import { TopologyView } from './components/TopologyView';
 import { analyzeCaptureBuffer } from './parser/analyzer';
@@ -32,6 +32,8 @@ export function App() {
   // PacketTable filter state
   const [searchText, setSearchText] = useState('');
   const [protocolFilter, setProtocolFilter] = useState('ALL');
+  const [ipMacFilter, setIpMacFilter] = useState('ALL');
+  const [ipMacDirection, setIpMacDirection] = useState<IpMacDirection>('any');
   const [onlyWarnings, setOnlyWarnings] = useState(false);
   const [packetIdFilter, setPacketIdFilter] = useState<number[] | null>(null);
 
@@ -46,6 +48,8 @@ export function App() {
       setSelectedPacketId(null);
       setSearchText('');
       setProtocolFilter('ALL');
+      setIpMacFilter('ALL');
+      setIpMacDirection('any');
       setOnlyWarnings(false);
       setPacketIdFilter(null);
     } catch (err) {
@@ -243,7 +247,9 @@ export function App() {
                 analysis={analysis}
                 lang={lang}
                 onFilterHost={(ip) => {
-                  setSearchText(ip);
+                  setSearchText('');
+                  setIpMacFilter(ip);
+                  setIpMacDirection('any');
                   setPacketIdFilter(null);
                   setProtocolFilter('ALL');
                   setOnlyWarnings(false);
@@ -260,6 +266,10 @@ export function App() {
                 onSearchChange={setSearchText}
                 protocolFilter={protocolFilter}
                 onProtocolFilterChange={setProtocolFilter}
+                ipMacFilter={ipMacFilter}
+                onIpMacFilterChange={setIpMacFilter}
+                ipMacDirection={ipMacDirection}
+                onIpMacDirectionChange={setIpMacDirection}
                 onlyWarnings={onlyWarnings}
                 onOnlyWarningsChange={setOnlyWarnings}
                 packetIdFilter={packetIdFilter}

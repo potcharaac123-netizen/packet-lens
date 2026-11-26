@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { AlertTriangle, Search, X } from 'lucide-react';
+import { AlertTriangle, Network, Search, X } from 'lucide-react';
 import type { CaptureAnalysis, Lang } from '../types/packet';
 import {
   formatBytes,
@@ -8,6 +8,8 @@ import {
   getProtocolBadgeClass,
 } from '../utils/format';
 
+export type IpMacDirection = 'any' | 'src' | 'dst';
+
 interface PacketTableViewProps {
   analysis: CaptureAnalysis;
   lang: Lang;
@@ -15,6 +17,10 @@ interface PacketTableViewProps {
   onSearchChange: (val: string) => void;
   protocolFilter: string;
   onProtocolFilterChange: (val: string) => void;
+  ipMacFilter: string;
+  onIpMacFilterChange: (val: string) => void;
+  ipMacDirection: IpMacDirection;
+  onIpMacDirectionChange: (val: IpMacDirection) => void;
   onlyWarnings: boolean;
   onOnlyWarningsChange: (val: boolean) => void;
   packetIdFilter: number[] | null;
@@ -30,6 +36,10 @@ export const PacketTableView: React.FC<PacketTableViewProps> = ({
   onSearchChange,
   protocolFilter,
   onProtocolFilterChange,
+  ipMacFilter,
+  onIpMacFilterChange,
+  ipMacDirection,
+  onIpMacDirectionChange,
   onlyWarnings,
   onOnlyWarningsChange,
   packetIdFilter,
@@ -38,6 +48,21 @@ export const PacketTableView: React.FC<PacketTableViewProps> = ({
   onSelectPacket,
 }) => {
   const protocols = ['ALL', ...Object.keys(analysis.protocolCounts)];
+
+  const { uniqueIps, uniqueMacs } = useMemo(() => {
+    const ips = new Set<string>();
+    const macs = new Set<string>();
+    for (const p of analysis.packets) {
+      if (p.srcIp && p.srcIp !== 'Unknown') ips.add(p.srcIp);
+      if (p.dstIp && p.dstIp !== 'Unknown') ips.add(p.dstIp);
+      if (p.srcMac) macs.add(p.srcMac);
+      if (p.dstMac) macs.add(p.dstMac);
+    }
+    return {
+      uniqueIps: Array.from(ips),
+      uniqueMacs: Array.from(macs),
+    };
+  }, [analysis.packets]);
 
   const filtered = useMemo(() => {
     const q = searchText.trim().toLowerCase();
@@ -50,16 +75,38 @@ export const PacketTableView: React.FC<PacketTableViewProps> = ({
       if (protocolFilter !== 'ALL' && p.protocol !== protocolFilter) {
         return false;
       }
+      if (ipMacFilter !== 'ALL') {
+        const matchSrc = p.srcIp === ipMacFilter || p.srcMac === ipMacFilter;
+        const matchDst = p.dstIp === ipMacFilter || p.dstMac === ipMacFilter;
+        if (ipMacDirection === 'src' && !matchSrc) return false;
+        if (ipMacDirection === 'dst' && !matchDst) return false;
+        if (ipMacDirection === 'any' && !matchSrc && !matchDst) return false;
+      }
       if (q) {
         const srcHost = getHostDisplayName(p.srcIp, analysis.ipToDomains).primary;
         const dstHost = getHostDisplayName(p.dstIp, analysis.ipToDomains).primary;
         const hay =
-          `${p.id} ${p.srcIp} ${p.dstIp} ${srcHost} ${dstHost} ${p.protocol} ${p.summaryTh} ${p.summaryEn} ${p.srcPort ?? ''} ${p.dstPort ?? ''}`.toLowerCase();
+          `${p.id} ${p.srcIp} ${p.dstIp} ${p.srcMac ?? ''} ${p.dstMac ?? ''} ${srcHost} ${dstHost} ${p.protocol} ${p.summaryTh} ${p.summaryEn} ${p.srcPort ?? ''} ${p.dstPort ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [analysis, searchText, protocolFilter, onlyWarnings, packetIdFilter]);
+  }, [
+    analysis,
+    searchText,
+    protocolFilter,
+    ipMacFilter,
+    ipMacDirection,
+    onlyWarnings,
+    packetIdFilter,
+  ]);
+
+  const hasActiveFilters =
+    searchText !== '' ||
+    protocolFilter !== 'ALL' ||
+    ipMacFilter !== 'ALL' ||
+    onlyWarnings ||
+    packetIdFilter !== null;
 
   return (
     <div className="space-y-4">
@@ -74,10 +121,10 @@ export const PacketTableView: React.FC<PacketTableViewProps> = ({
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder={
                 lang === 'th'
-                  ? 'ค้นหา IP, โดเมน, พอร์ต, ข้อความ...'
-                  : 'Search IP, domain, port, summary...'
+                  ? 'ค้นหา IP, MAC, โดเมน, พอร์ต...'
+                  : 'Search IP, MAC, domain, port...'
               }
-              className="pl-9 pr-8 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 w-64"
+              className="pl-9 pr-8 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500 w-60"
             />
             {searchText && (
               <button
@@ -87,6 +134,63 @@ export const PacketTableView: React.FC<PacketTableViewProps> = ({
               >
                 <X className="h-3.5 w-3.5" />
               </button>
+            )}
+          </div>
+
+          {/* IP / MAC Filter */}
+          <div className="flex items-center gap-1.5">
+            <div className="relative flex items-center">
+              <Network className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+              <select
+                value={ipMacFilter}
+                onChange={(e) => onIpMacFilterChange(e.target.value)}
+                className="pl-8 pr-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500 max-w-[230px]"
+              >
+                <option value="ALL">
+                  {lang === 'th' ? 'ทุก IP / MAC' : 'All IP / MAC'}
+                </option>
+                {uniqueIps.length > 0 && (
+                  <optgroup label="IP Address">
+                    {uniqueIps.map((ip) => {
+                      const d = analysis.ipToDomains[ip]?.[0];
+                      return (
+                        <option key={`ip-${ip}`} value={ip}>
+                          {d ? `${ip} (${d})` : ip}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                )}
+                {uniqueMacs.length > 0 && (
+                  <optgroup label="MAC Address">
+                    {uniqueMacs.map((mac) => (
+                      <option key={`mac-${mac}`} value={mac}>
+                        {mac}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
+
+            {ipMacFilter !== 'ALL' && (
+              <select
+                value={ipMacDirection}
+                onChange={(e) =>
+                  onIpMacDirectionChange(e.target.value as IpMacDirection)
+                }
+                className="rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs font-medium text-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+              >
+                <option value="any">
+                  {lang === 'th' ? 'ส่งหรือรับ (Any)' : 'Src or Dst'}
+                </option>
+                <option value="src">
+                  {lang === 'th' ? 'เฉพาะต้นทาง (Src)' : 'Source only'}
+                </option>
+                <option value="dst">
+                  {lang === 'th' ? 'เฉพาะปลายทาง (Dst)' : 'Destination only'}
+                </option>
+              </select>
             )}
           </div>
 
@@ -129,6 +233,23 @@ export const PacketTableView: React.FC<PacketTableViewProps> = ({
                 ? `กรองเฉพาะ ${packetIdFilter.length} แพ็กเก็ต`
                 : `Filtered to ${packetIdFilter.length} packets`}
               <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                onSearchChange('');
+                onProtocolFilterChange('ALL');
+                onIpMacFilterChange('ALL');
+                onIpMacDirectionChange('any');
+                onOnlyWarningsChange(false);
+                onClearPacketIdFilter();
+              }}
+              className="text-xs font-medium text-slate-500 hover:text-slate-800 underline"
+            >
+              {lang === 'th' ? 'ล้างตัวกรอง' : 'Clear all'}
             </button>
           )}
         </div>
@@ -200,14 +321,25 @@ export const PacketTableView: React.FC<PacketTableViewProps> = ({
                       </td>
                       <td className="py-2.5 px-2">
                         <div className="flex items-center gap-1.5 flex-wrap text-xs">
-                          <span className="font-medium text-slate-800" title={pkt.srcIp}>
+                          <span
+                            className="font-medium text-slate-800"
+                            title={`${pkt.srcIp}${pkt.srcMac ? ` (${pkt.srcMac})` : ''}`}
+                          >
                             {src.primary}
                           </span>
                           <span className="text-slate-400">→</span>
-                          <span className="font-medium text-slate-800" title={pkt.dstIp}>
+                          <span
+                            className="font-medium text-slate-800"
+                            title={`${pkt.dstIp}${pkt.dstMac ? ` (${pkt.dstMac})` : ''}`}
+                          >
                             {dst.primary}
                           </span>
                         </div>
+                        {(pkt.srcMac || pkt.dstMac) && (
+                          <div className="text-[10px] font-mono text-slate-400 mt-0.5">
+                            {pkt.srcMac ?? '?'} → {pkt.dstMac ?? '?'}
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 px-2">
                         <span
