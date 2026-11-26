@@ -3,51 +3,49 @@ chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 
-set PORT=8080
+set PORT=5179
 set URL=http://localhost:%PORT%
 
 echo ==================================================
 echo   PacketLens - Local Launcher
 echo ==================================================
 echo.
-echo   Opening browser: %URL%
+echo   URL: %URL%
 echo   Close this window or press Ctrl+C to stop server
 echo   and restore everything back to normal.
 echo ==================================================
 echo.
 
-:: Check if dist folder exists (fastest, zero install)
 if exist "dist\index.html" (
-    where python >nul 2>nul
+    python --version >nul 2>nul
     if %errorlevel%==0 (
-        start "" "%URL%"
-        python -m http.server %PORT% -d dist
+        start /b cmd /c "timeout /t 1 /nobreak >nul && start "" "%URL%""
+        python -c "import http.server, functools, mimetypes; mimetypes.add_type('application/javascript', '.js'); mimetypes.add_type('text/css', '.css'); h = functools.partial(http.server.SimpleHTTPRequestHandler, directory='dist'); http.server.ThreadingHTTPServer(('127.0.0.1', %PORT%), h).serve_forever()"
         goto :cleanup
     )
 
-    where py >nul 2>nul
+    py --version >nul 2>nul
     if %errorlevel%==0 (
-        start "" "%URL%"
-        py -m http.server %PORT% -d dist
+        start /b cmd /c "timeout /t 1 /nobreak >nul && start "" "%URL%""
+        py -c "import http.server, functools, mimetypes; mimetypes.add_type('application/javascript', '.js'); mimetypes.add_type('text/css', '.css'); h = functools.partial(http.server.SimpleHTTPRequestHandler, directory='dist'); http.server.ThreadingHTTPServer(('127.0.0.1', %PORT%), h).serve_forever()"
         goto :cleanup
     )
 
-    where npx >nul 2>nul
+    node --version >nul 2>nul
     if %errorlevel%==0 (
-        start "" "%URL%"
+        start /b cmd /c "timeout /t 2 /nobreak >nul && start "" "%URL%""
         call npx --yes serve dist -l %PORT%
         goto :cleanup
     )
 )
 
-:: Fallback to Node.js dev server if dist is missing or no python
-where npm >nul 2>nul
+node --version >nul 2>nul
 if %errorlevel%==0 (
     if not exist "node_modules" (
         echo Installing dependencies for first run...
         call npm install
     )
-    start "" "%URL%"
+    start /b cmd /c "timeout /t 2 /nobreak >nul && start "" "%URL%""
     call npm run dev -- --port %PORT%
     goto :cleanup
 )
