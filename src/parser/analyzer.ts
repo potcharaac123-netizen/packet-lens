@@ -8,7 +8,6 @@ import type {
   TopologyNode,
 } from '../types/packet';
 import { dissectPacket } from './dissectors';
-import { buildCommunicationLoops } from './loopBuilder';
 import { parseCaptureFile } from './pcapParser';
 
 function isPrivateIp(ip: string): boolean {
@@ -264,12 +263,14 @@ export function analyzeCaptureBuffer(
     insights.push({
       id: 'nxdomain',
       severity: 'error',
-      titleTh: `พบชื่อโดเมนที่หาไม่เจอ (DNS NXDOMAIN) ${nxDomainPackets.length} ครั้ง`,
-      titleEn: `DNS lookup failed (NXDOMAIN) ${nxDomainPackets.length} time(s)`,
+      titleTh: `หาชื่อเว็บไซต์ไม่เจอ ${nxDomainPackets.length} ครั้ง (DNS NXDOMAIN)`,
+      titleEn: `Website name not found ${nxDomainPackets.length} time(s) (DNS NXDOMAIN)`,
       descriptionTh:
-        'มีคำขอค้นหาชื่อเว็บไซต์ที่ไม่มีอยู่จริงหรือพิมพ์ผิด ทำให้ไม่สามารถเชื่อมต่อไปยังปลายทางได้',
+        'ระบบค้นหาชื่อเว็บ (DNS เหมือนสมุดหน้าเหลือง) ตอบกลับมาว่าไม่มีชื่อเว็บไซต์นี้อยู่ในระบบ ทำให้เปิดเว็บไม่ได้',
       descriptionEn:
-        'One or more domain names could not be resolved because they do not exist.',
+        'DNS (the internet phonebook) reported that this domain name does not exist.',
+      tipTh: 'วิธีเช็คเบื้องต้น: ตรวจดูว่าพิมพ์ชื่อเว็บผิดไหม, เว็บภายในองค์กรต้องต่อ VPN หรือเปล่า, หรือลองเปลี่ยน DNS เป็น 8.8.8.8 / 1.1.1.1',
+      tipEn: 'Tip: Check for typos in the URL, verify if a VPN is required, or test with DNS 8.8.8.8 / 1.1.1.1.',
       relatedPacketIds: nxDomainPackets,
     });
   }
@@ -278,12 +279,14 @@ export function analyzeCaptureBuffer(
     insights.push({
       id: 'tcp-rst',
       severity: 'error',
-      titleTh: `พบการตัดการเชื่อมต่อกะทันหัน (TCP Reset) ${rstPackets.length} ครั้ง`,
-      titleEn: `Abrupt connection reset (TCP RST) detected ${rstPackets.length} time(s)`,
+      titleTh: `ปลายทางปฏิเสธการเชื่อมต่อ ${rstPackets.length} ครั้ง (TCP Reset)`,
+      titleEn: `Connection refused / cut off ${rstPackets.length} time(s) (TCP RST)`,
       descriptionTh:
-        'เซิร์ฟเวอร์ปฏิเสธการเชื่อมต่อหรือพอร์ตปลายทางไม่ได้เปิดให้บริการ (อาจถูก Firewall บล็อกหรือเซอร์วิสปิดอยู่)',
+        'เหมือนไปเคาะประตูบ้านปลายทางแล้วไม่มีใครเปิดรับ หรือถูกปิดประตูใส่ทันที',
       descriptionEn:
-        'A host abruptly closed or refused the connection (port closed or blocked).',
+        'The destination host immediately refused or terminated the connection.',
+      tipTh: 'วิธีเช็คเบื้องต้น: โปรแกรมหรือเซิร์ฟเวอร์ปลายทางอาจยังไม่เปิดทำงาน, พอร์ตนั้นปิดอยู่, หรือมี Firewall บล็อกไว้',
+      tipEn: 'Tip: The target service may be down, the port is closed, or a firewall is blocking it.',
       relatedPacketIds: rstPackets,
     });
   }
@@ -292,10 +295,12 @@ export function analyzeCaptureBuffer(
     insights.push({
       id: 'http-err',
       severity: 'error',
-      titleTh: `เว็บเซิร์ฟเวอร์ตอบกลับ Error (HTTP 4xx/5xx) ${httpErrorPackets.length} ครั้ง`,
-      titleEn: `HTTP Error responses (4xx/5xx) ${httpErrorPackets.length} time(s)`,
-      descriptionTh: 'คำขอไปยังเว็บไซต์บางรายการไม่สำเร็จ เช่น ไม่พบหน้าเว็บ (404) หรือเซิร์ฟเวอร์ขัดข้อง (500)',
-      descriptionEn: 'Web server returned client or server error status codes.',
+      titleTh: `เว็บไซต์แจ้ง Error กลับมา ${httpErrorPackets.length} ครั้ง (HTTP 4xx/5xx)`,
+      titleEn: `Web server returned Error ${httpErrorPackets.length} time(s) (HTTP 4xx/5xx)`,
+      descriptionTh: 'เชื่อมต่อกับเว็บได้แล้ว แต่หน้าเว็บนั้นมีปัญหา เช่น ไม่พบหน้าเว็บ (404) หรือระบบหลังบ้านล่ม (500)',
+      descriptionEn: 'Connected to the server, but it returned a client or server error code.',
+      tipTh: 'วิธีเช็คเบื้องต้น: ถ้าเป็นเลข 404 แปลว่าลิงก์ผิด/ไม่มีหน้านี้ ถ้าเป็นเลข 500–503 แปลว่าเซิร์ฟเวอร์ฝั่งเว็บมีปัญหา',
+      tipEn: 'Tip: 404 means page not found; 500–503 indicates a server-side issue.',
       relatedPacketIds: httpErrorPackets,
     });
   }
@@ -304,12 +309,14 @@ export function analyzeCaptureBuffer(
     insights.push({
       id: 'http-plain',
       severity: 'warning',
-      titleTh: `พบการใช้งาน HTTP แบบไม่ได้เข้ารหัส ${unencryptedHttpPackets.length} คำขอ`,
+      titleTh: `มีการส่งข้อมูลแบบไม่ได้เข้ารหัส ${unencryptedHttpPackets.length} ครั้ง (HTTP ธรรมดา)`,
       titleEn: `Unencrypted HTTP traffic detected (${unencryptedHttpPackets.length} requests)`,
       descriptionTh:
-        'ข้อมูลที่ส่งผ่าน HTTP ธรรมดา (ไม่ใช่ HTTPS) สามารถถูกดักอ่านเนื้อหาได้ระหว่างทาง ควรหลีกเลี่ยงการส่งรหัสผ่าน',
+        'เหมือนส่งจดหมายแบบไม่ใส่ซองปิดผนึก คนที่อยู่บนเครือข่ายเดียวกันอาจแอบอ่านข้อความข้างในได้',
       descriptionEn:
         'Plain HTTP traffic is not encrypted and can be read in transit.',
+      tipTh: 'คำแนะนำ: ควรใช้ HTTPS แทน HTTP และหลีกเลี่ยงการกรอกรหัสผ่านหรือข้อมูลส่วนตัวบนเว็บนี้',
+      tipEn: 'Tip: Prefer HTTPS and avoid sending passwords or sensitive data over plain HTTP.',
       relatedPacketIds: unencryptedHttpPackets,
     });
   }
@@ -318,9 +325,9 @@ export function analyzeCaptureBuffer(
     insights.push({
       id: 'healthy',
       severity: 'success',
-      titleTh: 'ไม่พบความผิดปกติในการเชื่อมต่อ',
-      titleEn: 'No connection anomalies detected',
-      descriptionTh: 'แพ็กเก็ตทั้งหมดสื่อสารกันได้ตามปกติ ไม่พบการตัดการเชื่อมต่อหรือ DNS ล้มเหลว',
+      titleTh: 'การเชื่อมต่อทั้งหมดดูปกติดี',
+      titleEn: 'Everything looks healthy',
+      descriptionTh: 'ไม่พบอาการเข้าเว็บไม่ได้, ไม่พบการตัดการเชื่อมต่อกะทันหัน หรือ DNS ล้มเหลว',
       descriptionEn: 'All observed traffic completed without resets or DNS failures.',
       relatedPacketIds: [],
     });
@@ -328,7 +335,6 @@ export function analyzeCaptureBuffer(
 
   const lastTs = records[records.length - 1].timestampMs;
   const durationMs = Math.max(0, lastTs - firstTs);
-  const loops = buildCommunicationLoops(packets, ipToDomainsFinal);
 
   return {
     fileName,
@@ -345,7 +351,6 @@ export function analyzeCaptureBuffer(
     edges,
     domains,
     insights,
-    loops,
     warningCount,
     errorCount,
   };

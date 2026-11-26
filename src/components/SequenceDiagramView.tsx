@@ -3,13 +3,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
-  EyeOff,
-  Eye,
+  Sparkles,
   Network,
-  Layers,
-  X,
 } from 'lucide-react';
-import type { CaptureAnalysis, CommunicationLoop, Lang, ParsedPacket } from '../types/packet';
+import type { CaptureAnalysis, Lang, ParsedPacket } from '../types/packet';
 import {
   formatMs,
   getHostDisplayName,
@@ -21,36 +18,22 @@ interface SequenceDiagramViewProps {
   lang: Lang;
   selectedPacketId: number | null;
   onSelectPacket: (packetId: number) => void;
-  loopIdFilter: number | null;
-  onClearLoopFilter: () => void;
 }
 
-const PAGE_SIZE = 50;
-
-type DiagramRow =
-  | { kind: 'loop-header'; loop: CommunicationLoop; y: number }
-  | { kind: 'packet'; pkt: ParsedPacket; y: number };
+const PAGE_SIZE = 30;
+const KEY_PROTOCOLS = new Set(['DNS', 'HTTP', 'TLS', 'QUIC', 'ICMP', 'ICMPv6', 'ARP', 'DHCP']);
 
 export const SequenceDiagramView: React.FC<SequenceDiagramViewProps> = ({
   analysis,
   lang,
   selectedPacketId,
   onSelectPacket,
-  loopIdFilter,
-  onClearLoopFilter,
 }) => {
-  const [hidePureAck, setHidePureAck] = useState(true);
-  const [groupByLoop, setGroupByLoop] = useState(true);
+  const [keyEventsOnly, setKeyEventsOnly] = useState(true);
   const [protocolFilter, setProtocolFilter] = useState<string>('ALL');
   const [ipMacFilter, setIpMacFilter] = useState<string>('ALL');
   const [searchText, setSearchText] = useState('');
   const [page, setPage] = useState(0);
-
-  const loopMap = useMemo(() => {
-    const m = new Map<number, CommunicationLoop>();
-    for (const l of analysis.loops) m.set(l.id, l);
-    return m;
-  }, [analysis.loops]);
 
   const { uniqueIps, uniqueMacs } = useMemo(() => {
     const ips = new Set<string>();
@@ -67,15 +50,12 @@ export const SequenceDiagramView: React.FC<SequenceDiagramViewProps> = ({
   const filteredPackets = useMemo(() => {
     const q = searchText.trim().toLowerCase();
     return analysis.packets.filter((p) => {
-      if (loopIdFilter !== null && p.loopId !== loopIdFilter) {
-        return false;
-      }
-      if (hidePureAck && p.protocol === 'TCP' && loopIdFilter === null) {
-        const isPureAck =
-          p.tcpFlags?.length === 1 &&
-          p.tcpFlags[0] === 'ACK' &&
-          p.layers.every((l) => l.name !== 'HTTP' && l.name !== 'TLS');
-        if (isPureAck) return false;
+      if (keyEventsOnly && protocolFilter === 'ALL') {
+        const isKey =
+          KEY_PROTOCOLS.has(p.protocol) ||
+          p.severity === 'error' ||
+          p.severity === 'warning';
+        if (!isKey) return false;
       }
       if (protocolFilter !== 'ALL' && p.protocol !== protocolFilter) {
         return false;
@@ -97,14 +77,7 @@ export const SequenceDiagramView: React.FC<SequenceDiagramViewProps> = ({
       }
       return true;
     });
-  }, [
-    analysis,
-    loopIdFilter,
-    hidePureAck,
-    protocolFilter,
-    ipMacFilter,
-    searchText,
-  ]);
+  }, [analysis, keyEventsOnly, protocolFilter, ipMacFilter, searchText]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPackets.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -113,7 +86,6 @@ export const SequenceDiagramView: React.FC<SequenceDiagramViewProps> = ({
     (safePage + 1) * PAGE_SIZE
   );
 
-  // Determine ordered participants (hosts) in this page
   const hosts = useMemo(() => {
     const list: string[] = [];
     for (const p of pagePackets) {
@@ -126,42 +98,10 @@ export const SequenceDiagramView: React.FC<SequenceDiagramViewProps> = ({
   const colWidth = 190;
   const leftMargin = 84;
   const topHeaderHeight = 72;
-  const loopBannerHeight = 32;
   const rowHeight = 52;
-
-  const { rows, svgHeight } = useMemo(() => {
-    const out: DiagramRow[] = [];
-    let cursorY = topHeaderHeight + 8;
-    let lastLoopId: number | undefined;
-
-    for (const pkt of pagePackets) {
-      if (groupByLoop && pkt.loopId !== undefined && pkt.loopId !== lastLoopId) {
-        const loop = loopMap.get(pkt.loopId);
-        if (loop) {
-          out.push({ kind: 'loop-header', loop, y: cursorY });
-          cursorY += loopBannerHeight;
-        }
-        lastLoopId = pkt.loopId;
-      }
-      out.push({ kind: 'packet', pkt, y: cursorY + 24 });
-      cursorY += rowHeight;
-    }
-
-    return { rows: out, svgHeight: cursorY + 24 };
-  }, [pagePackets, groupByLoop, loopMap]);
-
-  const svgWidth = Math.max(680, leftMargin + hosts.length * colWidth + 40);
+  const svgWidth = Math.max(660, leftMargin + hosts.length * colWidth + 40);
+  const svgHeight = topHeaderHeight + pagePackets.length * rowHeight + 28;
   const protocols = ['ALL', ...Object.keys(analysis.protocolCounts)];
-
-  const loopBannerColors = (loop: CommunicationLoop) => {
-    if (loop.status === 'error' || loop.status === 'stuck') {
-      return { bg: '#fff1f2', border: '#fecdd3', text: '#be123c' };
-    }
-    if (loop.status === 'warning') {
-      return { bg: '#fffbeb', border: '#fde68a', text: '#b45309' };
-    }
-    return { bg: '#f1f5f9', border: '#cbd5e1', text: '#334155' };
-  };
 
   return (
     <div className="space-y-4">
@@ -244,47 +184,21 @@ export const SequenceDiagramView: React.FC<SequenceDiagramViewProps> = ({
 
           <button
             type="button"
-            onClick={() => setGroupByLoop((v) => !v)}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
-              groupByLoop
-                ? 'bg-sky-50 text-sky-700 border-sky-200'
-                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            <Layers className="h-3.5 w-3.5" />
-            {lang === 'th' ? 'แบ่งแถบตาม Loop' : 'Group by Loop'}
-          </button>
-
-          <button
-            type="button"
             onClick={() => {
-              setHidePureAck((v) => !v);
+              setKeyEventsOnly((v) => !v);
               setPage(0);
             }}
             className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
-              hidePureAck
+              keyEventsOnly
                 ? 'bg-sky-50 text-sky-700 border-sky-200'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
             }`}
           >
-            {hidePureAck ? (
-              <EyeOff className="h-3.5 w-3.5" />
-            ) : (
-              <Eye className="h-3.5 w-3.5" />
-            )}
-            {lang === 'th' ? 'ซ่อน TCP ACK เปล่า' : 'Hide empty TCP ACKs'}
+            <Sparkles className="h-3.5 w-3.5" />
+            {lang === 'th'
+              ? 'เฉพาะเหตุการณ์สำคัญ (อ่านง่าย)'
+              : 'Key Events Only'}
           </button>
-
-          {loopIdFilter !== null && (
-            <button
-              type="button"
-              onClick={onClearLoopFilter}
-              className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
-            >
-              Loop #{loopIdFilter}
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
         </div>
 
         {/* Pagination */}
@@ -322,8 +236,8 @@ export const SequenceDiagramView: React.FC<SequenceDiagramViewProps> = ({
         {pagePackets.length === 0 ? (
           <div className="py-16 text-center text-sm text-slate-500">
             {lang === 'th'
-              ? 'ไม่พบเหตุการณ์ที่ตรงกับเงื่อนไขการกรอง'
-              : 'No matching packet events found.'}
+              ? 'ไม่พบเหตุการณ์ที่ตรงกับเงื่อนไข (ลองปิดโหมด "เฉพาะเหตุการณ์สำคัญ" เพื่อดูแพ็กเก็ตทั้งหมด)'
+              : 'No matching events found. Try disabling "Key Events Only" to view all packets.'}
           </div>
         ) : (
           <svg
@@ -394,55 +308,9 @@ export const SequenceDiagramView: React.FC<SequenceDiagramViewProps> = ({
               );
             })}
 
-            {/* Loop Headers & Packet Arrows */}
-            {rows.map((row) => {
-              if (row.kind === 'loop-header') {
-                const { loop, y } = row;
-                const colors = loopBannerColors(loop);
-                const title = lang === 'th' ? loop.titleTh : loop.titleEn;
-                const statusTxt =
-                  loop.stuckReasonTh
-                    ? lang === 'th'
-                      ? loop.stuckReasonTh
-                      : loop.stuckReasonEn
-                    : lang === 'th'
-                      ? `จบรอบ (${formatMs(loop.durationMs)})`
-                      : `Completed (${formatMs(loop.durationMs)})`;
-
-                return (
-                  <g key={`loop-hdr-${loop.id}-${y}`}>
-                    <rect
-                      x={10}
-                      y={y + 4}
-                      width={svgWidth - 20}
-                      height={24}
-                      rx={6}
-                      fill={colors.bg}
-                      stroke={colors.border}
-                      strokeWidth={1}
-                    />
-                    <text
-                      x={20}
-                      y={y + 20}
-                      fill={colors.text}
-                      className="text-[11px] font-semibold"
-                    >
-                      Loop #{loop.id}: {title}
-                    </text>
-                    <text
-                      x={svgWidth - 22}
-                      y={y + 20}
-                      textAnchor="end"
-                      fill={colors.text}
-                      className="text-[10px] font-medium"
-                    >
-                      {statusTxt}
-                    </text>
-                  </g>
-                );
-              }
-
-              const { pkt, y } = row;
+            {/* Packet Arrows */}
+            {pagePackets.map((pkt: ParsedPacket, idx: number) => {
+              const y = topHeaderHeight + idx * rowHeight + 28;
               const srcIdx = hosts.indexOf(pkt.srcIp);
               const dstIdx = hosts.indexOf(pkt.dstIp);
               const x1 = leftMargin + srcIdx * colWidth + colWidth / 2;
@@ -451,14 +319,10 @@ export const SequenceDiagramView: React.FC<SequenceDiagramViewProps> = ({
               const isSelected = selectedPacketId === pkt.id;
               const labelText =
                 lang === 'th' ? pkt.summaryTh : pkt.summaryEn;
-              const gapSuffix =
-                (pkt.deltaFromPrevInLoopMs ?? 0) >= 50
-                  ? ` (+${formatMs(pkt.deltaFromPrevInLoopMs!)})`
-                  : '';
-              const fullLabel = `[${pkt.protocol}] ${labelText}${gapSuffix}`;
+              const fullLabel = `[${pkt.protocol}] ${labelText}`;
               const truncatedLabel =
-                fullLabel.length > 56
-                  ? fullLabel.slice(0, 54) + '…'
+                fullLabel.length > 52
+                  ? fullLabel.slice(0, 50) + '…'
                   : fullLabel;
 
               const midX = x1 === x2 ? x1 + 45 : (x1 + x2) / 2;
