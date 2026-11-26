@@ -4,37 +4,28 @@ setlocal
 cd /d "%~dp0"
 
 set PORT=5179
-set URL=http://localhost:%PORT%
 
 echo ==================================================
 echo   PacketLens - Local Launcher
 echo ==================================================
 echo.
-echo   URL: %URL%
-echo   Close this window or press Ctrl+C to stop server
-echo   and restore everything back to normal.
-echo ==================================================
-echo.
 
 if exist "dist\index.html" (
+    node --version >nul 2>nul
+    if %errorlevel%==0 (
+        node serve.mjs
+        goto :cleanup
+    )
+
     python --version >nul 2>nul
     if %errorlevel%==0 (
-        start /b cmd /c "timeout /t 1 /nobreak >nul && start "" "%URL%""
-        python -c "import http.server, functools, mimetypes; mimetypes.add_type('application/javascript', '.js'); mimetypes.add_type('text/css', '.css'); h = functools.partial(http.server.SimpleHTTPRequestHandler, directory='dist'); http.server.ThreadingHTTPServer(('127.0.0.1', %PORT%), h).serve_forever()"
+        python -c "import http.server, functools, mimetypes, webbrowser, os; mimetypes.add_type('application/javascript', '.js'); mimetypes.add_type('text/css', '.css'); h = functools.partial(http.server.SimpleHTTPRequestHandler, directory='dist'); s = http.server.ThreadingHTTPServer(('127.0.0.1', %PORT%), h); print('PacketLens is running at http://127.0.0.1:%PORT%'); print('Close this window or press Ctrl+C to stop.'); webbrowser.open('http://127.0.0.1:%PORT%'); s.serve_forever()"
         goto :cleanup
     )
 
     py --version >nul 2>nul
     if %errorlevel%==0 (
-        start /b cmd /c "timeout /t 1 /nobreak >nul && start "" "%URL%""
-        py -c "import http.server, functools, mimetypes; mimetypes.add_type('application/javascript', '.js'); mimetypes.add_type('text/css', '.css'); h = functools.partial(http.server.SimpleHTTPRequestHandler, directory='dist'); http.server.ThreadingHTTPServer(('127.0.0.1', %PORT%), h).serve_forever()"
-        goto :cleanup
-    )
-
-    node --version >nul 2>nul
-    if %errorlevel%==0 (
-        start /b cmd /c "timeout /t 2 /nobreak >nul && start "" "%URL%""
-        call npx --yes serve dist -l %PORT%
+        py -c "import http.server, functools, mimetypes, webbrowser, os; mimetypes.add_type('application/javascript', '.js'); mimetypes.add_type('text/css', '.css'); h = functools.partial(http.server.SimpleHTTPRequestHandler, directory='dist'); s = http.server.ThreadingHTTPServer(('127.0.0.1', %PORT%), h); print('PacketLens is running at http://127.0.0.1:%PORT%'); print('Close this window or press Ctrl+C to stop.'); webbrowser.open('http://127.0.0.1:%PORT%'); s.serve_forever()"
         goto :cleanup
     )
 )
@@ -45,12 +36,11 @@ if %errorlevel%==0 (
         echo Installing dependencies for first run...
         call npm install
     )
-    start /b cmd /c "timeout /t 2 /nobreak >nul && start "" "%URL%""
-    call npm run dev -- --port %PORT%
+    call npm run dev -- --port %PORT% --open
     goto :cleanup
 )
 
-echo [Error] Neither Python nor Node.js was found on this computer.
+echo [Error] Neither Node.js nor Python was found on this computer.
 echo Please install Node.js (https://nodejs.org) or Python (https://python.org).
 pause
 exit /b 1
@@ -58,4 +48,5 @@ exit /b 1
 :cleanup
 echo.
 echo Server stopped. Everything is back to normal.
+pause
 endlocal
