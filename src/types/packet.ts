@@ -66,8 +66,40 @@ export interface ParsedPacket {
   severity: Severity;
   warningTagTh?: string;
   warningTagEn?: string;
+  loopId?: number;
+  isRetransmission?: boolean;
+  deltaFromPrevInLoopMs?: number;
   layers: ProtocolLayer[];
   rawBytes: Uint8Array;
+}
+
+export type LoopStatus = 'completed' | 'active' | 'stuck' | 'error' | 'warning';
+
+export interface CommunicationLoop {
+  id: number;
+  titleTh: string;
+  titleEn: string;
+  protocol: ProtocolName;
+  initiatorIp: string;
+  responderIp: string;
+  initiatorPort?: number;
+  responderPort?: number;
+  startTimeMs: number;
+  endTimeMs: number;
+  durationMs: number;
+  maxGapMs: number;
+  maxGapAfterPacketId?: number;
+  packetIds: number[];
+  totalBytes: number;
+  status: LoopStatus;
+  startDescTh: string;
+  startDescEn: string;
+  endDescTh: string;
+  endDescEn: string;
+  stuckReasonTh?: string;
+  stuckReasonEn?: string;
+  retransmissionCount: number;
+  hasReply: boolean;
 }
 
 export interface TopologyNode {
@@ -129,6 +161,7 @@ export interface CaptureAnalysis {
   edges: TopologyEdge[];
   domains: DomainVisit[];
   insights: StoryInsight[];
+  loops: CommunicationLoop[];
   warningCount: number;
   errorCount: number;
 }

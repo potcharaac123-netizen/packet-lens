@@ -8,6 +8,7 @@ import type {
   TopologyNode,
 } from '../types/packet';
 import { dissectPacket } from './dissectors';
+import { buildCommunicationLoops } from './loopBuilder';
 import { parseCaptureFile } from './pcapParser';
 
 function isPrivateIp(ip: string): boolean {
@@ -327,6 +328,7 @@ export function analyzeCaptureBuffer(
 
   const lastTs = records[records.length - 1].timestampMs;
   const durationMs = Math.max(0, lastTs - firstTs);
+  const loops = buildCommunicationLoops(packets, ipToDomainsFinal);
 
   return {
     fileName,
@@ -343,6 +345,7 @@ export function analyzeCaptureBuffer(
     edges,
     domains,
     insights,
+    loops,
     warningCount,
     errorCount,
   };

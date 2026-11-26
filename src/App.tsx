@@ -7,9 +7,11 @@ import {
   LayoutDashboard,
   List,
   Network,
+  Repeat,
   RotateCcw,
 } from 'lucide-react';
 import { DropZone } from './components/DropZone';
+import { LoopsView } from './components/LoopsView';
 import { OverviewView } from './components/OverviewView';
 import { PacketInspector } from './components/PacketInspector';
 import { PacketTableView, type IpMacDirection } from './components/PacketTableView';
@@ -20,7 +22,7 @@ import { generateSamplePcap } from './parser/samplePcap';
 import type { CaptureAnalysis, Lang } from './types/packet';
 import { formatBytes } from './utils/format';
 
-type TabKey = 'overview' | 'sequence' | 'topology' | 'packets';
+type TabKey = 'overview' | 'loops' | 'sequence' | 'topology' | 'packets';
 
 export function App() {
   const [lang, setLang] = useState<Lang>('th');
@@ -36,6 +38,7 @@ export function App() {
   const [ipMacDirection, setIpMacDirection] = useState<IpMacDirection>('any');
   const [onlyWarnings, setOnlyWarnings] = useState(false);
   const [packetIdFilter, setPacketIdFilter] = useState<number[] | null>(null);
+  const [sequenceLoopFilter, setSequenceLoopFilter] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -52,6 +55,7 @@ export function App() {
       setIpMacDirection('any');
       setOnlyWarnings(false);
       setPacketIdFilter(null);
+      setSequenceLoopFilter(null);
     } catch (err) {
       setErrorMsg(
         err instanceof Error
@@ -82,6 +86,12 @@ export function App() {
       labelTh: 'ภาพรวม & สรุปเรื่องราว',
       labelEn: 'Overview & Story',
       icon: <LayoutDashboard className="h-4 w-4" />,
+    },
+    {
+      key: 'loops',
+      labelTh: 'รอบการสื่อสาร (Loops)',
+      labelEn: 'Communication Loops',
+      icon: <Repeat className="h-4 w-4" />,
     },
     {
       key: 'sequence',
@@ -233,12 +243,26 @@ export function App() {
               />
             )}
 
+            {activeTab === 'loops' && (
+              <LoopsView
+                analysis={analysis}
+                lang={lang}
+                onInspectPacket={(id) => setSelectedPacketId(id)}
+                onOpenInSequence={(loop) => {
+                  setSequenceLoopFilter(loop.id);
+                  setActiveTab('sequence');
+                }}
+              />
+            )}
+
             {activeTab === 'sequence' && (
               <SequenceDiagramView
                 analysis={analysis}
                 lang={lang}
                 selectedPacketId={selectedPacketId}
                 onSelectPacket={(id) => setSelectedPacketId(id)}
+                loopIdFilter={sequenceLoopFilter}
+                onClearLoopFilter={() => setSequenceLoopFilter(null)}
               />
             )}
 
